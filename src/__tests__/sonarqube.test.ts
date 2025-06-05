@@ -1713,4 +1713,164 @@ describe('SonarQubeClient', () => {
       expect(scope.isDone()).toBe(true);
     });
   });
+
+  describe('Additional coverage for uncovered functions', () => {
+    describe('listProjects error handling', () => {
+      it('should handle errors when listing projects', async () => {
+        nock(baseUrl)
+          .get('/api/projects/search')
+          .query(true)
+          .matchHeader('authorization', 'Bearer test-token')
+          .reply(500, 'Internal Server Error');
+
+        await expect(client.listProjects()).rejects.toThrow();
+      });
+    });
+
+    describe('getComponentsMeasures single string componentKeys', () => {
+      it('should handle single string componentKeys without commas', async () => {
+        const mockComponent = {
+          key: 'single-component',
+          name: 'Single Component',
+          qualifier: 'TRK',
+          measures: [
+            {
+              metric: 'coverage',
+              value: '85.5',
+            },
+          ],
+        };
+
+        const mockMetrics = [
+          {
+            id: 'coverage',
+            key: 'coverage',
+            name: 'Coverage',
+            description: 'Code coverage',
+            domain: 'Coverage',
+            type: 'PERCENT',
+            direction: 1,
+            qualitative: true,
+            hidden: false,
+            custom: false,
+          },
+        ];
+
+        // Mock the individual component call
+        nock(baseUrl)
+          .get('/api/measures/component')
+          .query({
+            component: 'single-component',
+            metricKeys: 'coverage',
+          })
+          .matchHeader('authorization', 'Bearer test-token')
+          .reply(200, {
+            component: mockComponent,
+            metrics: mockMetrics,
+          });
+
+        // Mock the additional call for metrics from first component
+        nock(baseUrl)
+          .get('/api/measures/component')
+          .query({
+            component: 'single-component',
+            metricKeys: 'coverage',
+          })
+          .matchHeader('authorization', 'Bearer test-token')
+          .reply(200, {
+            component: mockComponent,
+            metrics: mockMetrics,
+          });
+
+        const result = await client.getComponentsMeasures({
+          componentKeys: 'single-component',
+          metricKeys: ['coverage'],
+        });
+
+        expect(result.components).toHaveLength(1);
+        expect(result.components[0].key).toBe('single-component');
+        expect(result.metrics).toHaveLength(1);
+        expect(result.metrics[0].key).toBe('coverage');
+      });
+    });
+
+    describe('doTransition', () => {
+      it('should perform issue transition successfully', async () => {
+        nock(baseUrl)
+          .post('/api/issues/do_transition', (body) => {
+            return (
+              body.issue === 'test-issue-key' &&
+              body.transition === 'confirm' &&
+              body.comment === 'Confirming this issue'
+            );
+          })
+          .matchHeader('authorization', 'Bearer test-token')
+          .reply(200);
+
+        await client.doTransition({
+          issue: 'test-issue-key',
+          transition: 'confirm',
+          comment: 'Confirming this issue',
+        });
+      });
+
+      it('should perform issue transition without comment', async () => {
+        nock(baseUrl)
+          .post('/api/issues/do_transition', (body) => {
+            return body.issue === 'test-issue-key' && body.transition === 'wontfix';
+          })
+          .matchHeader('authorization', 'Bearer test-token')
+          .reply(200);
+
+        await client.doTransition({
+          issue: 'test-issue-key',
+          transition: 'wontfix',
+        });
+      });
+
+      it('should perform issue transition with isFeedback flag', async () => {
+        nock(baseUrl)
+          .post('/api/issues/do_transition', (body) => {
+            return (
+              body.issue === 'test-issue-key' &&
+              body.transition === 'resolve' &&
+              body.isFeedback === true
+            );
+          })
+          .matchHeader('authorization', 'Bearer test-token')
+          .reply(200);
+
+        await client.doTransition({
+          issue: 'test-issue-key',
+          transition: 'resolve',
+          isFeedback: true,
+        });
+      });
+    });
+
+    describe('getIssues sorting parameter coverage', () => {
+      it('should handle s parameter for sorting', async () => {
+        const mockResponse = {
+          issues: [],
+          components: [],
+          rules: [],
+          paging: { pageIndex: 1, pageSize: 10, total: 0 },
+        };
+
+        const scope = nock(baseUrl)
+          .get('/api/issues/search')
+          .query((actualQuery) => {
+            return actualQuery.s === 'FILE_LINE';
+          })
+          .matchHeader('authorization', 'Bearer test-token')
+          .reply(200, mockResponse);
+
+        await client.getIssues({
+          s: 'FILE_LINE',
+        });
+
+        expect(scope.isDone()).toBe(true);
+      });
+    });
+  });
 });

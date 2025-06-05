@@ -715,6 +715,23 @@ export interface HotspotStatusUpdateParams {
 }
 
 /**
+ * Interface for issue transition parameters
+ */
+export interface IssueTransitionParams {
+  issue: string;
+  transition:
+    | 'confirm'
+    | 'unconfirm'
+    | 'reopen'
+    | 'resolve'
+    | 'falsepositive'
+    | 'wontfix'
+    | 'close';
+  comment?: string;
+  isFeedback?: boolean;
+}
+
+/**
  * Interface for SonarQube client
  */
 export interface ISonarQubeClient {
@@ -745,6 +762,9 @@ export interface ISonarQubeClient {
   hotspots(params: HotspotSearchParams): Promise<SonarQubeHotspotSearchResult>;
   hotspot(hotspotKey: string): Promise<SonarQubeHotspotDetails>;
   updateHotspotStatus(params: HotspotStatusUpdateParams): Promise<void>;
+
+  // Issues API methods
+  doTransition(params: IssueTransitionParams): Promise<void>;
 }
 
 /**
@@ -1269,6 +1289,22 @@ export class SonarQubeClient implements ISonarQubeClient {
       status,
       ...(resolution && { resolution }),
       ...(comment && { comment }),
+    });
+  }
+
+  /**
+   * Performs a transition on an issue
+   * @param params Parameters for the issue transition
+   * @returns Promise that resolves when the transition is complete
+   */
+  async doTransition(params: IssueTransitionParams): Promise<void> {
+    const { issue, transition, comment, isFeedback } = params;
+
+    await this.webApiClient.issues.doTransition({
+      issue,
+      transition,
+      ...(comment && { comment }),
+      ...(isFeedback !== undefined && { isFeedback }),
     });
   }
 

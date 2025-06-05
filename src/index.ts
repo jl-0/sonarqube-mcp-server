@@ -15,6 +15,7 @@ import {
   ScmBlameParams,
   HotspotSearchParams,
   HotspotStatusUpdateParams,
+  IssueTransitionParams,
   createSonarQubeClient,
 } from './sonarqube.js';
 import { z } from 'zod';
@@ -668,6 +669,28 @@ export async function handleSonarQubeUpdateHotspotStatus(
   };
 }
 
+/**
+ * Handler for performing issue transitions
+ * @param params Parameters for the issue transition
+ * @param client Optional SonarQube client instance
+ * @returns Promise that resolves when the transition is complete
+ */
+export async function handleSonarQubeIssueTransition(
+  params: IssueTransitionParams,
+  client: ISonarQubeClient = getDefaultClient()
+) {
+  await client.doTransition(params);
+
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: 'Issue transition completed successfully',
+      },
+    ],
+  };
+}
+
 // Define SonarQube severity schema for validation
 const severitySchema = z
   .enum(['INFO', 'MINOR', 'MAJOR', 'CRITICAL', 'BLOCKER'])
@@ -898,6 +921,18 @@ export const updateHotspotStatusHandler = async (params: Record<string, unknown>
   });
 };
 
+/**
+ * Lambda function for issue_transition tool
+ */
+export const issueTransitionHandler = async (params: Record<string, unknown>) => {
+  return handleSonarQubeIssueTransition({
+    issue: params.issue as string,
+    transition: params.transition as IssueTransitionParams['transition'],
+    comment: params.comment as string | undefined,
+    isFeedback: params.isFeedback as boolean | undefined,
+  });
+};
+
 // Wrapper functions for MCP registration that don't expose the client parameter
 export const projectsMcpHandler = (params: Record<string, unknown>) => projectsHandler(params);
 export const metricsMcpHandler = (params: Record<string, unknown>) =>
@@ -923,6 +958,8 @@ export const hotspotsMcpHandler = (params: Record<string, unknown>) => hotspotsH
 export const hotspotMcpHandler = (params: Record<string, unknown>) => hotspotHandler(params);
 export const updateHotspotStatusMcpHandler = (params: Record<string, unknown>) =>
   updateHotspotStatusHandler(params);
+export const issueTransitionMcpHandler = (params: Record<string, unknown>) =>
+  issueTransitionHandler(params);
 
 // Register SonarQube tools
 mcpServer.tool(
@@ -1204,6 +1241,26 @@ mcpServer.tool(
     comment: z.string().nullable().optional(),
   },
   updateHotspotStatusMcpHandler
+);
+
+mcpServer.tool(
+  'issue_transition',
+  'Perform a state transition on an issue (requires appropriate permissions)',
+  {
+    issue: z.string(),
+    transition: z.enum([
+      'confirm',
+      'unconfirm',
+      'reopen',
+      'resolve',
+      'falsepositive',
+      'wontfix',
+      'close',
+    ]),
+    comment: z.string().optional(),
+    isFeedback: z.boolean().optional(),
+  },
+  issueTransitionMcpHandler
 );
 
 // Only start the server if not in test mode
